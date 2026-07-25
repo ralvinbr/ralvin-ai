@@ -1,0 +1,9 @@
+{
+  "name": "ralvin-skills",
+  "description": "Skills da Ralvin para scaffolding de projetos",
+  "version": "0.1.0",
+  "author": {
+    "name": "Diego Lirio",
+    "email": "diegolirio.dl@gmail.com"
+  }
+}

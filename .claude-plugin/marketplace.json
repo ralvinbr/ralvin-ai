@@ -1,0 +1,21 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "ralvin-ai",
+  "description": "Marketplace de skills e plugins da Ralvin",
+  "owner": {
+    "name": "Diego Lirio",
+    "email": "diegolirio.dl@gmail.com"
+  },
+  "plugins": [
+    {
+      "name": "ralvin-skills",
+      "description": "Skills da Ralvin para scaffolding de projetos. Inclui ralvin-new-simple-project, que cria um monorepo com backend Java Spring Boot e frontend Next.js.",
+      "author": {
+        "name": "Diego Lirio",
+        "email": "diegolirio.dl@gmail.com"
+      },
+      "source": "./plugins/ralvin-skills",
+      "category": "development"
+    }
+  ]
+}

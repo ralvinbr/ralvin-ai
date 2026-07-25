@@ -1,0 +1,84 @@
+BACKEND_DIR  := {project-name}-backend
+FRONTEND_DIR := {project-name}-frontend
+GRADLEW      := ./gradlew
+
+BACKEND_PORT  ?= 8080
+FRONTEND_PORT ?= 3000
+
+.DEFAULT_GOAL := help
+SHELL := /bin/bash
+
+##@ Geral
+
+.PHONY: help
+help: ## Mostra esta ajuda
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUso:\n  make \033[36m<alvo>\033[0m\n"} \
+		/^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2 } \
+		/^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) }' $(MAKEFILE_LIST)
+	@echo ""
+
+##@ Dependências
+
+$(FRONTEND_DIR)/node_modules: $(FRONTEND_DIR)/package-lock.json
+	cd $(FRONTEND_DIR) && npm ci
+	@touch $@
+
+.PHONY: install
+install: $(FRONTEND_DIR)/node_modules ## Instala dependências do frontend (npm ci)
+
+##@ Build
+
+.PHONY: build
+build: build-backend build-frontend ## Builda backend e frontend
+
+.PHONY: build-backend
+build-backend: ## Builda o backend (gera o jar e roda os testes)
+	cd $(BACKEND_DIR) && $(GRADLEW) build
+
+.PHONY: build-frontend
+build-frontend: $(FRONTEND_DIR)/node_modules ## Builda o frontend (produção)
+	cd $(FRONTEND_DIR) && npm run build
+
+##@ Testes
+
+.PHONY: test
+test: test-backend test-frontend ## Roda testes do backend e lint do frontend
+
+.PHONY: test-backend
+test-backend: ## Roda os testes do backend
+	cd $(BACKEND_DIR) && $(GRADLEW) test
+
+.PHONY: test-frontend
+test-frontend: $(FRONTEND_DIR)/node_modules ## Roda o lint do frontend (scaffold não tem testes)
+	cd $(FRONTEND_DIR) && npm run lint
+
+##@ Execução
+
+.PHONY: run
+run: $(FRONTEND_DIR)/node_modules ## Roda backend e frontend juntos (Ctrl+C encerra os dois)
+	@echo "backend  -> http://localhost:$(BACKEND_PORT)"
+	@echo "frontend -> http://localhost:$(FRONTEND_PORT)"
+	@echo ""
+	@trap 'kill 0' INT TERM; \
+		( cd $(BACKEND_DIR) && $(GRADLEW) bootRun --console=plain 2>&1 | awk '{ print "[backend]  " $$0; fflush() }' ) & \
+		( cd $(FRONTEND_DIR) && npm run dev 2>&1 | awk '{ print "[frontend] " $$0; fflush() }' ) & \
+		wait
+
+.PHONY: run-backend
+run-backend: ## Roda somente o backend
+	cd $(BACKEND_DIR) && $(GRADLEW) bootRun
+
+.PHONY: run-frontend
+run-frontend: $(FRONTEND_DIR)/node_modules ## Roda somente o frontend (dev)
+	cd $(FRONTEND_DIR) && npm run dev
+
+##@ Limpeza
+
+.PHONY: clean
+clean: ## Remove artefatos de build dos dois projetos
+	cd $(BACKEND_DIR) && $(GRADLEW) clean
+	rm -rf $(FRONTEND_DIR)/.next
+
+.PHONY: clean-all
+clean-all: clean ## Limpeza completa, incluindo node_modules
+	rm -rf $(FRONTEND_DIR)/node_modules

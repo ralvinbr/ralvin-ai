@@ -1,0 +1,355 @@
+# {project-name} — PRD
+
+Documento de especificação e arquitetura-alvo deste projeto.
+
+> **Natureza deste documento:** o scaffold inicial entrega apenas a estrutura
+> mínima (aplicação Spring Boot que sobe, frontend Next.js, Makefile). A
+> arquitetura descrita aqui é o **alvo a ser implementado**, não o que já
+> existe. Os pacotes de camada e os testes descritos abaixo ainda não foram
+> criados.
+
+## 1. Visão geral
+
+Monorepo com dois módulos independentes:
+
+| Módulo | Stack |
+|---|---|
+| `{project-name}-backend` | Java {java-version}, Spring Boot {boot-version}, Gradle |
+| `{project-name}-frontend` | Next.js, React, TypeScript, Tailwind CSS |
+
+Orquestração pela raiz via `Makefile` (`make build`, `make test`, `make run`).
+Não há Turborepo, Nx ou npm workspaces: os projetos compilam de forma
+independente.
+
+### Coordenadas do backend
+
+| Campo | Valor |
+|---|---|
+| Group | `{group}` |
+| Artifact | `{project-name}` |
+| Pacote base | `{package}` |
+| Dependências iniciais | `{dependencies}` |
+
+### Estado do banco
+
+Spring Data JDBC com H2 em memória e **sem schema**. A aplicação sobe limpa
+porque ainda não existem entidades nem repositórios. Não haverá tabela até a
+primeira migration ou `schema.sql`. Isso é esperado.
+
+## 2. Arquitetura: Clean Architecture + CQRS
+
+O backend é um módulo único; as camadas são **pacotes**, não módulos Gradle.
+
+```
+{package}/
+├── domain/                 regras de negócio puras
+│   ├── entity/
+│   ├── valueobject/
+│   └── exception/
+├── application/            casos de uso, separados por CQRS
+│   ├── command/            escrita: Command + Handler + Result
+│   └── query/              leitura: Query + Handler + Result
+├── infrastructure/         detalhes técnicos
+│   ├── jdbc/               repositórios Spring Data JDBC
+│   └── http/               clientes de APIs externas
+├── buildingblocks/         contratos transversais
+│   ├── config/
+│   └── exception/
+└── entrypoint/             pontos de entrada da aplicação
+    ├── controller/         @RestController
+    ├── listener/           consumidores de mensageria
+    └── job/                tarefas @Scheduled
+```
+
+### Regra de dependência
+
+O sentido das dependências aponta sempre para dentro:
+
+```
+entrypoint ──→ application ──→ domain
+                    ↑              ↑
+            infrastructure ────────┘
+```
+
+- **`domain`** não depende de nada. Sem anotações de framework, sem Spring,
+  sem JDBC. É Java puro.
+- **`application`** depende só de `domain`. Declara as portas (interfaces) que
+  precisa; não conhece a implementação.
+- **`infrastructure`** implementa as portas de `application` e conhece o mundo
+  externo (banco, HTTP, mensageria).
+- **`entrypoint`** traduz protocolo (HTTP, mensagem, agendamento) em Command ou
+  Query e devolve a resposta. Não contém regra de negócio.
+- **`buildingblocks`** guarda contratos base e configuração transversal.
+
+Inverter qualquer uma dessas setas é violação de arquitetura.
+
+### CQRS
+
+Escrita e leitura são caminhos separados.
+
+**Comando** (altera estado):
+
+```java
+package {package}.application.command;
+
+public record CreateProductCommand(String name, BigDecimal price) {}
+```
+
+```java
+package {package}.application.command;
+
+@Service
+public class CreateProductHandler {
+
+    private final ProductRepository repository;
+
+    public CreateProductHandler(ProductRepository repository) {
+        this.repository = repository;
+    }
+
+    public CreateProductResult handle(CreateProductCommand command) {
+        var product = Product.create(command.name(), command.price());
+        repository.save(product);
+        return new CreateProductResult(product.id());
+    }
+}
+```
+
+**Consulta** (não altera estado): mesma forma, com `Query` no lugar de
+`Command`. Consultas podem ler projeções direto do banco, sem passar pelas
+entidades de domínio.
+
+Convenções:
+
+- Um Handler por Command/Query — sem classes de serviço que acumulam operações
+- Command e Query são imutáveis (`record`)
+- O Handler devolve um `Result`, nunca a entidade de domínio
+
+## 3. Estratégia de testes
+
+Duas camadas de teste, com escopos distintos e obrigatórios.
+
+### 3.1 Testes unitários — obrigatórios no domínio
+
+Todo comportamento em `domain/` tem teste unitário. Sem Spring, sem banco, sem
+mock de framework: são objetos puros e o teste é rápido.
+
+```java
+class ProductTest {
+
+    @Test
+    void shouldRejectNegativePrice() {
+        assertThrows(InvalidPriceException.class,
+            () -> Product.create("Notebook", new BigDecimal("-1")));
+    }
+}
+```
+
+Regras de negócio sem teste unitário são consideradas incompletas.
+
+### 3.2 Testes integrados — obrigatórios em todo entrypoint
+
+**Todo** entrypoint tem teste de integração: Controllers, Listeners e Jobs.
+Nomenclatura obrigatória: para o entrypoint `ProductController`, o teste é
+`ProductControllerIT`, estendendo `BaseIntegrationTest`.
+
+O sufixo `IT` e a herança não são estilo — a regra de ArchUnit da seção 4
+depende exatamente deles.
+
+**`BaseIntegrationTest`** centraliza a subida do contexto:
+
+```java
+package {package};
+
+@Tag("integration")
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+public abstract class BaseIntegrationTest {
+
+    @LocalServerPort
+    protected int port;
+
+    protected RestTestClient restTestClient;
+
+    @BeforeEach
+    void configureRestTestClient() {
+        restTestClient = RestTestClient.bindToServer()
+            .baseUrl("http://localhost:" + port)
+            .build();
+    }
+}
+```
+
+Enquanto o banco é H2 em memória, nada mais é necessário: cada execução começa
+com base limpa.
+
+**Evolução para Testcontainers.** Quando o projeto adotar banco real, o
+Testcontainers entra apenas no `BaseIntegrationTest`, sem tocar em nenhum teste:
+
+```java
+@Container
+static final PostgreSQLContainer<?> DATABASE =
+    new PostgreSQLContainer<>("postgres:16");
+
+@DynamicPropertySource
+static void overrideProperties(DynamicPropertyRegistry registry) {
+    registry.add("spring.datasource.url", DATABASE::getJdbcUrl);
+}
+```
+
+Esse é o retorno de concentrar a infraestrutura na classe base: a troca de H2
+por container real fica contida em um arquivo.
+
+## 4. ArchUnit — escopo restrito
+
+O ArchUnit entra com **uma única responsabilidade**: verificar que todo
+entrypoint tem teste de integração. Ele não valida as regras de dependência
+entre camadas da seção 2 — essas ficam por revisão de código.
+
+Essa restrição é deliberada. Uma suíte de ArchUnit ampla tende a virar ruído que
+se desativa no primeiro conflito; uma regra só, que responde uma pergunta
+objetiva, sobrevive.
+
+Dependência:
+
+```gradle
+testImplementation 'com.tngtech.archunit:archunit-junit5:1.3.0'
+```
+
+`src/test/resources/archunit.properties`:
+
+```properties
+freeze.store.default.path=archunit_store
+freeze.store.default.allowStoreCreation=false
+freeze.refreeze=false
+```
+
+A regra:
+
+```java
+package {package}.architecture;
+
+import com.tngtech.archunit.base.DescribedPredicate;
+import com.tngtech.archunit.core.domain.JavaClass;
+import com.tngtech.archunit.core.domain.JavaClasses;
+import com.tngtech.archunit.core.importer.ClassFileImporter;
+import com.tngtech.archunit.lang.ArchCondition;
+import com.tngtech.archunit.lang.ConditionEvents;
+import com.tngtech.archunit.lang.SimpleConditionEvent;
+import com.tngtech.archunit.library.freeze.FreezingArchRule;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
+
+@Tag("integration")
+class EntrypointHasIntegrationTestRuleIT {
+
+    private final JavaClasses importedClasses =
+        new ClassFileImporter().importPackages("{package}");
+
+    private final DescribedPredicate<JavaClass> isEntrypoint =
+        DescribedPredicate.describe(
+            "are entrypoints (@RestController or @Scheduled)",
+            javaClass ->
+                javaClass.isAnnotatedWith(RestController.class)
+                    || javaClass.getMethods().stream()
+                        .anyMatch(method -> method.isAnnotatedWith(Scheduled.class)));
+
+    private ArchCondition<JavaClass> haveCorrespondingIntegrationTest(JavaClasses allClasses) {
+        return new ArchCondition<>(
+            "have a corresponding integration test (<Name>IT extending BaseIntegrationTest)") {
+
+            @Override
+            public void check(JavaClass entrypoint, ConditionEvents events) {
+                String expectedTestName = entrypoint.getSimpleName() + "IT";
+
+                boolean found = false;
+                for (JavaClass candidate : allClasses) {
+                    if (candidate.getSimpleName().equals(expectedTestName)
+                        && candidate.isAssignableTo(BaseIntegrationTest.class)) {
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (found) {
+                    events.add(SimpleConditionEvent.satisfied(entrypoint,
+                        "Entrypoint " + entrypoint.getName()
+                            + " tem teste de integração '" + expectedTestName + "'"));
+                } else {
+                    events.add(SimpleConditionEvent.violated(entrypoint,
+                        "Entrypoint " + entrypoint.getName()
+                            + " não tem teste de integração '" + expectedTestName
+                            + "' estendendo BaseIntegrationTest"));
+                }
+            }
+        };
+    }
+
+    @Test
+    void entrypointMustHaveIntegrationTest() {
+        FreezingArchRule.freeze(
+            classes()
+                .that(isEntrypoint)
+                .and().areNotAnnotatedWith(RestControllerAdvice.class)
+                .should(haveCorrespondingIntegrationTest(importedClasses))
+                .because("todo entrypoint exige teste de integração")
+        ).check(importedClasses);
+    }
+}
+```
+
+Notas sobre a regra:
+
+- **`FreezingArchRule`** congela as violações existentes num `archunit_store`, de
+  modo que a regra passa a valer para código novo sem exigir uma correção em
+  massa. Violações registradas nunca aumentam; ao corrigir uma, ela sai do store
+  e não volta.
+- **`@RestControllerAdvice` é excluído** de propósito: é tratamento global de
+  erro, não entrypoint de negócio.
+- **Listeners de mensageria não estão na regra ainda.** O predicado cobre
+  `@RestController` e `@Scheduled`, que são as anotações disponíveis com as
+  dependências atuais. Ao adicionar `spring-kafka`, inclua a cláusula:
+
+  ```java
+  || javaClass.getMethods().stream()
+      .anyMatch(method -> method.isAnnotatedWith(KafkaListener.class))
+  ```
+
+  Sem `spring-kafka` no classpath, essa linha não compila — daí ela ficar
+  documentada em vez de presente.
+
+### Separação das execuções
+
+Os testes de integração usam `@Tag("integration")` para poder rodar separados
+dos unitários:
+
+```gradle
+tasks.named('test') {
+    useJUnitPlatform { excludeTags 'integration' }
+}
+
+tasks.register('integrationTest', Test) {
+    useJUnitPlatform { includeTags 'integration' }
+    shouldRunAfter tasks.named('test')
+}
+```
+
+## 5. Definição de pronto
+
+Uma entrega só está completa quando:
+
+- [ ] Regras de negócio em `domain/` têm teste unitário
+- [ ] Todo entrypoint novo tem `<Nome>IT` estendendo `BaseIntegrationTest`
+- [ ] `EntrypointHasIntegrationTestRuleIT` passa
+- [ ] O sentido das dependências da seção 2 foi respeitado
+- [ ] `make build` termina com código de saída 0
+
+## 6. Fora de escopo
+
+Docker, CI/CD, autenticação, integração HTTP entre frontend e backend (CORS ou
+proxy de dev) e observabilidade além do Actuator. Cada um desses entra por
+decisão explícita, não por antecipação.

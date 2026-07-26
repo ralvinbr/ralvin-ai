@@ -6,8 +6,9 @@ description: >-
   e rodar os dois juntos. Use quando o usuário pedir "novo projeto simples",
   "criar projeto Java com Next.js", "monorepo Java + Next", "projeto do zero
   Spring Boot e frontend", ou invocar /ralvin-new-simple-project. Gera
-  {project-name}-backend, {project-name}-frontend, Makefile e .gitignore da raiz.
-  Para projetos Kotlin multi-módulo com CQRS, use setup-kotlin-gradle.
+  {project-name}-backend, {project-name}-frontend, Makefile, .gitignore da raiz e
+  docs/PRD.md com a arquitetura-alvo (Clean Architecture + CQRS) e a estratégia
+  de testes. Para projetos Kotlin multi-módulo com CQRS, use setup-kotlin-gradle.
 argument-hint: "Sem argumentos — o nome vem da pasta raiz; group, pacote e dependências são perguntados com defaults"
 ---
 
@@ -19,6 +20,7 @@ Monorepo de dois módulos independentes, sem ferramenta de orquestração:
 {project-name}/
 ├── {project-name}-backend/    Spring Boot (gradlew próprio)
 ├── {project-name}-frontend/   Next.js
+├── docs/PRD.md                especificação e arquitetura-alvo
 ├── Makefile
 └── .gitignore
 ```
@@ -98,7 +100,27 @@ próprios, e é assim que devem permanecer.
 
 Confirme que a indentação das receitas ficou com TAB.
 
-### Passo 6 — Git
+### Passo 6 — docs/PRD.md
+
+Crie a pasta `docs/` e escreva `docs/PRD.md` a partir de
+[PRD.md.template](./templates/PRD.md.template), substituindo todos os
+placeholders: `{project-name}`, `{group}`, `{package}`, `{java-version}`,
+`{boot-version}` e `{dependencies}`.
+
+Use os valores **reais** da geração — a `boot-version` é a que voltou do
+metadata, não a que a skill imaginou.
+
+O PRD descreve a arquitetura-alvo do backend (Clean Architecture + CQRS, camadas
+como pacotes) e a estratégia de testes: unitários no domínio, integrados em todo
+entrypoint, e uma regra de ArchUnit restrita a verificar que entrypoint tem
+teste de integração.
+
+**Não crie os pacotes de camada nem os testes descritos no PRD.** O documento é
+a especificação do que deve ser construído; o scaffold entrega apenas a
+estrutura mínima. O próprio template diz isso na abertura, e essa distinção
+precisa continuar clara.
+
+### Passo 7 — Git
 
 Se ainda não for repositório, `git init`. Antes de commitar, audite o que entrou:
 
@@ -109,7 +131,7 @@ git diff --cached --name-only | grep -cE 'node_modules|\.next/|build/'
 
 O resultado precisa ser `0`. Faça um commit para o scaffold.
 
-### Passo 7 — Verificar
+### Passo 8 — Verificar
 
 Obrigatório. Sem isso não há como afirmar que o scaffold funciona.
 
@@ -133,7 +155,7 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:3000   # espera 200
 Encerre com SIGINT no grupo de processos do make e confirme que as portas 8080 e
 3000 ficaram livres e que não sobrou processo órfão.
 
-### Passo 8 — Relatar
+### Passo 9 — Relatar
 
 Informe ao usuário:
 

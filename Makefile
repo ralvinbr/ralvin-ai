@@ -1,0 +1,38 @@
+REPO        := ralvinbr/ralvin-ai
+MARKETPLACE := ralvin-ai
+PLUGIN      := ralvin-skills
+PLUGIN_DIR  := plugins/ralvin-skills
+
+.DEFAULT_GOAL := help
+SHELL := /bin/bash
+
+##@ Geral
+
+.PHONY: help
+help: ## Mostra esta ajuda
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUso:\n  make \033[36m<alvo>\033[0m\n"} \
+		/^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2 } \
+		/^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) }' $(MAKEFILE_LIST)
+	@echo ""
+
+##@ Instalação
+
+.PHONY: marketplace-add
+marketplace-add: ## Registra este repositório como marketplace
+	claude plugin marketplace add $(REPO)
+
+.PHONY: install
+install: ## Instala o plugin a partir do marketplace
+	claude plugin install $(PLUGIN)@$(MARKETPLACE)
+
+##@ Atualização
+
+.PHONY: update
+update: ## Atualiza o marketplace e depois o plugin
+	claude plugin marketplace update $(MARKETPLACE) && claude plugin update $(PLUGIN)
+
+##@ Release
+
+.PHONY: tag
+tag: ## Cria a tag {plugin}--v{version} validando os manifestos
+	claude plugin tag $(PLUGIN_DIR)

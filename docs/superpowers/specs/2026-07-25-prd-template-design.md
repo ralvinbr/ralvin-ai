@@ -2,6 +2,7 @@
 
 **Data:** 2026-07-25
 **Status:** Implementado (commit `e63e0d1`)
+**Versão do plugin:** `ralvin-skills` 0.1.1
 
 ## Objetivo
 

@@ -338,7 +338,117 @@ tasks.register('integrationTest', Test) {
 }
 ```
 
-## 5. Definição de pronto
+## 5. Fluxo de autenticação e login — **condicional**
+
+> **Esta seção só vale se o projeto tiver autenticação.** O scaffold **não**
+> gera nada disto (ver seção 7). Se o projeto não tem login, apague a seção
+> inteira. Se tem — ou vier a ter — ele deve seguir exatamente o desenho
+> abaixo, e não uma variação improvisada.
+
+### 5.1 Formato e transporte do token
+
+O token é um JWT auto-contido assinado com HMAC-SHA256, **stateless** no
+servidor e sem lista de revogação.
+
+Ele trafega de **duas** formas, e o filtro aceita as duas:
+
+| Origem | Uso |
+|---|---|
+| Header `Authorization: Bearer <token>` | Clientes programáticos e testes de integração |
+| Cookie `httpOnly` chamado `token` | Browser |
+
+**O header tem precedência sobre o cookie.** Isso não é detalhe de
+implementação: é o que mantém os testes de integração baseados em header
+válidos depois que o cookie entra, e precisa ter teste próprio — header válido
+somado a cookie inválido deve autenticar.
+
+### 5.2 Atributos do cookie
+
+```
+token=<jwt>; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=<jwt-expiration/1000>
+```
+
+- **`HttpOnly`** — JavaScript não lê o token, o que fecha a via de roubo por
+  XSS e permite que Server Components leiam o cookie no servidor.
+- **`Max-Age` derivado da expiração do JWT**, nunca um número solto: uma fonte
+  de verdade só, sem risco do cookie sobreviver ao token ou morrer antes dele.
+- **`Secure` por variável de ambiente** (ex.: `AUTH_COOKIE_SECURE`), com
+  default `false` só para o desenvolvimento local em HTTP. Em produção é `true`.
+- **`Path=/` também no logout.** Sem ele o browser planta um segundo cookie em
+  vez de apagar o original.
+
+Como `httpOnly` impede o JavaScript de remover o cookie, a saída exige um
+endpoint dedicado `POST /auth/logout` que devolve o mesmo cookie com
+`Max-Age=0`.
+
+### 5.3 CSRF e CORS
+
+A partir do momento em que o token vive num cookie, ele é **credencial
+ambiente** e o CSRF deixa de ser irrelevante. Manter `csrf.disable()` só é
+seguro sob duas condições, e ambas precisam estar escritas ao lado do código:
+
+1. o cookie é `SameSite=Lax`, então o browser não o envia em POST/PATCH/DELETE
+   originado de outro site;
+2. o CORS declara **origem exata, nunca `*`**, e o `Content-Type:
+   application/json` força preflight, que essa origem exata reprova.
+
+Afrouxar o `SameSite`, aceitar corpo form-encoded ou liberar origem curinga
+exige reativar a proteção CSRF. Com `allowCredentials(true)`, origem curinga é
+proibida de qualquer forma.
+
+### 5.4 Restrição de domínio no deploy
+
+`SameSite=Lax` funciona em desenvolvimento porque frontend e backend
+compartilham `localhost`. **Se forem publicados em domínios registráveis
+diferentes, o browser deixa de enviar o cookie** nas chamadas com
+`credentials: "include"` e o login para de funcionar em silêncio. Nesse
+cenário o cookie precisa de `SameSite=None`, que por sua vez exige `Secure`.
+
+Decida isto antes do deploy, não depois.
+
+### 5.5 Desacoplamento da camada `application`
+
+A camada `application` conversa com uma **porta** (ex.:
+`{package}.application.port.GeradorDeToken`) e nunca com a implementação
+concreta do JWT, preservando a regra de dependência da seção 2. O ganho é
+concreto: os testes dos handlers deixam de precisar de secret, `Clock` e da
+biblioteca de JWT — bastam uma lambda devolvendo uma string fixa.
+
+### 5.6 Frontend
+
+- **Camada de API separada por ambiente, por arquivo.** Importar `next/headers`
+  num módulo que um Client Component também importa quebra o build: o módulo
+  inteiro vira server-only por contágio. Um arquivo para o browser
+  (`credentials: "include"`) e outro para o servidor (lê o cookie e o repassa
+  no header `Authorization`). O parse de resposta compartilhado fica num
+  terceiro módulo, sem dependência de ambiente.
+- **O middleware fica em `src/middleware.ts`**, ao lado de `app/`, e **não** na
+  raiz do projeto. O Next resolve essa convenção a partir do diretório que
+  contém `app/`; na raiz o arquivo é ignorado **sem erro e sem aviso**, e o
+  build passa igual. Confira o redirecionamento por requisição real, nunca pelo
+  build verde.
+- **O middleware só checa a presença do cookie, não valida assinatura** — a
+  chave HMAC pertence ao servidor. Ele é conveniência de navegação, não a
+  fronteira de segurança; quem autoriza é o backend. Conferir o **valor**, e não
+  só a presença, evita admitir requisição que vai levar 401.
+- **401 redireciona para o login nas duas pontas**: no browser e, nas Server
+  Components, com `redirect()`. Sem a metade do servidor, um cookie expirado
+  cai no error boundary, que culpa o servidor indisponível e não oferece saída.
+- **As rotas de login e registro ficam fora do redirecionamento automático de
+  401.** Num login com senha errada o 401 é a resposta esperada; redirecionar
+  recarrega a página que já está aberta e apaga a mensagem de erro que o
+  formulário acabou de exibir.
+
+### 5.7 Rotas públicas
+
+Apenas `POST /auth/login`, `POST /auth/register`, `POST /auth/logout`,
+`/actuator/**` e `/error`. Todo o resto exige token.
+
+`/error` é o destino do forward interno do Spring em erros como 405 e 415;
+sem `permitAll` o Security intercepta o forward não autenticado e converte o
+erro em 403.
+
+## 6. Definição de pronto
 
 Uma entrega só está completa quando:
 
@@ -349,7 +459,7 @@ Uma entrega só está completa quando:
 - [ ] `make build` termina com código de saída 0
 - [ ] Os checkboxes do plano da feature em `docs/superpowers/plans/` estão marcados, e o que não foi verificado ficou explicitamente em aberto
 
-### 5.1 Marcação dos planos
+### 6.1 Marcação dos planos
 
 Vale a partir do momento em que o projeto passar a usar planos em
 `docs/superpowers/plans/`.
@@ -376,8 +486,14 @@ seja: nada na cadeia grava no artefato que sobrevive à sessão. Por isso a regr
 Um plano inteiro sem marcação não distingue "não fiz" de "esqueci de marcar", e
 é essa ambiguidade que deixa passar step de verificação que nunca rodou.
 
-## 6. Fora de escopo
+## 7. Fora de escopo
 
 Docker, CI/CD, autenticação, integração HTTP entre frontend e backend (CORS ou
 proxy de dev) e observabilidade além do Actuator. Cada um desses entra por
 decisão explícita, não por antecipação.
+
+Sobre autenticação, a distinção importa: o scaffold não gera **nada** de login,
+token ou Security — não há `SecurityConfig`, filtro, nem tela. A seção 5 não
+contradiz isto; ela descreve a forma a seguir **se e quando** a autenticação
+for adicionada, para que essa decisão não seja improvisada. Enquanto não for,
+a seção 5 pode ser apagada.

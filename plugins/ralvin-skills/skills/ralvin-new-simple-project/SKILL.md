@@ -115,13 +115,34 @@ como pacotes) e a estratégia de testes: unitários no domínio, integrados em t
 entrypoint, e uma regra de ArchUnit restrita a verificar que entrypoint tem
 teste de integração.
 
-A seção 5.1 do template registra a regra de marcação dos planos: marcar
+A seção 6.1 do template registra a regra de marcação dos planos: marcar
 `- [x]` no commit de cada step, e deixar em aberto o que não foi verificado de
 fato. Ela entra no scaffold porque nada na cadeia do superpowers escreve a
 marcação de volta no arquivo do plano — as skills de execução registram
 conclusão na lista de todos da sessão e num ledger, que não sobrevivem à sessão.
 Mantenha a seção mesmo que o projeto ainda não tenha `docs/superpowers/plans/`;
 o próprio texto diz que ela passa a valer quando o primeiro plano existir.
+
+**Seção 5 — autenticação — é condicional.** O scaffold **não** gera login,
+token nem Security, e isso não muda. A seção existe para que, no dia em que a
+autenticação entrar, ela siga um desenho já decidido em vez de ser improvisada:
+JWT em cookie `httpOnly` com header aceito em paralelo e tendo precedência,
+`Max-Age` derivado da expiração do token, `Secure` por variável de ambiente,
+endpoint de logout, CSRF sustentado por `SameSite=Lax` mais origem exata no
+CORS, middleware em `src/middleware.ts` conferindo só presença, e 401
+redirecionando nas duas pontas.
+
+Copie a seção **exatamente como está no template**, sem reescrever nem resumir
+— cada item ali corrige um erro observado em projeto real. Não a adapte ao
+projeto na geração: ela é condicional por definição e o próprio texto se
+apresenta assim.
+
+Se o usuário disser que o projeto **não** terá autenticação, apague a seção 5
+inteira e renumere as seguintes (Definição de pronto vira 5, com 5.1, e Fora de
+escopo vira 6), ajustando também a referência à seção 5 no fim de "Fora de
+escopo". Na dúvida, **mantenha** a seção: um projeto sem login apenas ignora um
+trecho de documento, enquanto um projeto com login sem essa orientação erra de
+formas que o build não pega.
 
 **Não crie os pacotes de camada nem os testes descritos no PRD.** O documento é
 a especificação do que deve ser construído; o scaffold entrega apenas a

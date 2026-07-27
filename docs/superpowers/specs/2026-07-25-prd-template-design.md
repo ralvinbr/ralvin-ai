@@ -107,6 +107,26 @@ Consequência a registrar: Listeners estão cobertos conceitualmente na seção 
 testes, mas não na regra executável. Fechar essa lacuna exige que a skill passe a
 adicionar `spring-kafka` — o que muda o escopo do "projeto simples".
 
+### 7. A regra de marcação dos planos entra no PRD, não fica implícita
+
+O `writing-plans` gera a sintaxe `- [ ]` e anuncia que ela serve de tracking,
+mas as skills de execução (`executing-plans`, `subagent-driven-development`)
+registram conclusão na lista de todos da sessão e num ledger — os dois somem
+quando a sessão acaba. A única instrução do pacote para escrever `- [x]` de
+volta no arquivo está em `using-superpowers/references/antigravity-tools.md`,
+que existe porque aquele harness não tem ferramenta de todo, e não se aplica ao
+Claude Code — não há `claude-code-tools.md`.
+
+Resultado: nada na cadeia grava no artefato que sobrevive à sessão, e um plano
+pode ser inteiramente executado com os checkboxes intactos. Um plano sem
+marcação não distingue "não fiz" de "esqueci de marcar" — ambiguidade que
+esconde step de verificação que nunca rodou.
+
+Por isso a regra é do projeto e vai para a seção 5.1 do PRD, com o item
+correspondente na definição de pronto da seção 5. O texto se declara aplicável
+só a partir do primeiro plano em `docs/superpowers/plans/`, para não parecer
+requisito de um scaffold que ainda não tem planos.
+
 ## Alterações no `SKILL.md`
 
 - Novo **passo 6** cria `docs/` e escreve `docs/PRD.md` a partir do template,
@@ -115,6 +135,8 @@ adicionar `spring-kafka` — o que muda o escopo do "projeto simples".
 - Passos seguintes renumerados: Git (7), Verificar (8), Relatar (9)
 - Diagrama de estrutura passa a mostrar `docs/PRD.md`
 - `description` do frontmatter menciona o PRD
+- Passo 6 explica a seção 5.1 do template (marcação dos planos) e instrui a
+  mantê-la mesmo em projeto sem `docs/superpowers/plans/`
 
 ## Verificação
 

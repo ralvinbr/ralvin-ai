@@ -115,6 +115,14 @@ como pacotes) e a estratégia de testes: unitários no domínio, integrados em t
 entrypoint, e uma regra de ArchUnit restrita a verificar que entrypoint tem
 teste de integração.
 
+A seção 5.1 do template registra a regra de marcação dos planos: marcar
+`- [x]` no commit de cada step, e deixar em aberto o que não foi verificado de
+fato. Ela entra no scaffold porque nada na cadeia do superpowers escreve a
+marcação de volta no arquivo do plano — as skills de execução registram
+conclusão na lista de todos da sessão e num ledger, que não sobrevivem à sessão.
+Mantenha a seção mesmo que o projeto ainda não tenha `docs/superpowers/plans/`;
+o próprio texto diz que ela passa a valer quando o primeiro plano existir.
+
 **Não crie os pacotes de camada nem os testes descritos no PRD.** O documento é
 a especificação do que deve ser construído; o scaffold entrega apenas a
 estrutura mínima. O próprio template diz isso na abertura, e essa distinção

@@ -347,6 +347,34 @@ Uma entrega só está completa quando:
 - [ ] `EntrypointHasIntegrationTestRuleIT` passa
 - [ ] O sentido das dependências da seção 2 foi respeitado
 - [ ] `make build` termina com código de saída 0
+- [ ] Os checkboxes do plano da feature em `docs/superpowers/plans/` estão marcados, e o que não foi verificado ficou explicitamente em aberto
+
+### 5.1 Marcação dos planos
+
+Vale a partir do momento em que o projeto passar a usar planos em
+`docs/superpowers/plans/`.
+
+Ao concluir cada step de um plano, trocar `- [ ]` por `- [x]` **no commit
+daquele step**, e não numa passada de arrumação no fim. A mesma regra vale para
+a definição de pronto da spec da feature.
+
+Só marcar o que foi verificado de fato. Um step de verificação manual que não
+foi executado permanece desmarcado e é citado no relatório — marcar por
+presunção é pior do que deixar em branco, porque converte "não sei" em "está
+feito".
+
+**Por que isto precisa estar escrito:** o `writing-plans` gera a sintaxe de
+checkbox e anuncia que ela serve de tracking, mas as skills de execução
+(`executing-plans`, `subagent-driven-development`) direcionam a conclusão para a
+lista de todos da sessão e para um ledger — os dois somem quando a sessão
+acaba. A única instrução do pacote para escrever `- [x]` de volta no arquivo
+está em `using-superpowers/references/antigravity-tools.md`, que existe porque
+aquele harness não tem ferramenta de todo e não se aplica ao Claude Code. Ou
+seja: nada na cadeia grava no artefato que sobrevive à sessão. Por isso a regra
+é do projeto, e não herdada da ferramenta.
+
+Um plano inteiro sem marcação não distingue "não fiz" de "esqueci de marcar", e
+é essa ambiguidade que deixa passar step de verificação que nunca rodou.
 
 ## 6. Fora de escopo
 

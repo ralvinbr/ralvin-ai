@@ -107,6 +107,51 @@ Consequência a registrar: Listeners estão cobertos conceitualmente na seção 
 testes, mas não na regra executável. Fechar essa lacuna exige que a skill passe a
 adicionar `spring-kafka` — o que muda o escopo do "projeto simples".
 
+### 7. A regra de marcação dos planos entra no PRD, não fica implícita
+
+O `writing-plans` gera a sintaxe `- [ ]` e anuncia que ela serve de tracking,
+mas as skills de execução (`executing-plans`, `subagent-driven-development`)
+registram conclusão na lista de todos da sessão e num ledger — os dois somem
+quando a sessão acaba. A única instrução do pacote para escrever `- [x]` de
+volta no arquivo está em `using-superpowers/references/antigravity-tools.md`,
+que existe porque aquele harness não tem ferramenta de todo, e não se aplica ao
+Claude Code — não há `claude-code-tools.md`.
+
+Resultado: nada na cadeia grava no artefato que sobrevive à sessão, e um plano
+pode ser inteiramente executado com os checkboxes intactos. Um plano sem
+marcação não distingue "não fiz" de "esqueci de marcar" — ambiguidade que
+esconde step de verificação que nunca rodou.
+
+Por isso a regra é do projeto e vai para a seção 6.1 do PRD, com o item
+correspondente na definição de pronto da seção 6. O texto se declara aplicável
+só a partir do primeiro plano em `docs/superpowers/plans/`, para não parecer
+requisito de um scaffold que ainda não tem planos.
+
+### 8. Autenticação entra como seção condicional, não como escopo do scaffold
+
+O scaffold continua sem gerar login, token ou Security — isso não muda, e
+"autenticação" segue em "Fora de escopo". O que muda é que o PRD passa a
+carregar, na seção 5, o desenho a ser seguido **se e quando** a autenticação
+existir.
+
+O motivo é a assimetria de custo: um projeto sem login apenas ignora um trecho
+de documento, enquanto um projeto que adiciona login sem orientação erra de
+formas que o build não pega. O conteúdo da seção é o resultado de erros
+observados em projeto real gerado por esta skill — middleware fora de `src/`
+que o Next ignora em silêncio, 401 do próprio login apagando a mensagem de
+erro, Server Component sem `redirect()` caindo no error boundary, `Secure` do
+cookie nunca exercitado em teste, e CSRF desligado sem nenhum registro de por
+que ainda era seguro.
+
+Por isso o `SKILL.md` manda copiar a seção **literalmente**, sem resumir nem
+adaptar na geração, e orienta a **manter** em caso de dúvida. A remoção é
+explícita e vem com a instrução de renumeração, para não deixar o documento
+inconsistente.
+
+Consequência a registrar: template e seções ficam mais longos, e a numeração
+passou a 7 seções — a definição de pronto virou 6 (com 6.1) e "Fora de escopo"
+virou 7.
+
 ## Alterações no `SKILL.md`
 
 - Novo **passo 6** cria `docs/` e escreve `docs/PRD.md` a partir do template,
@@ -115,6 +160,10 @@ adicionar `spring-kafka` — o que muda o escopo do "projeto simples".
 - Passos seguintes renumerados: Git (7), Verificar (8), Relatar (9)
 - Diagrama de estrutura passa a mostrar `docs/PRD.md`
 - `description` do frontmatter menciona o PRD
+- Passo 6 explica a seção 6.1 do template (marcação dos planos) e instrui a
+  mantê-la mesmo em projeto sem `docs/superpowers/plans/`
+- Passo 6 trata a seção 5 (autenticação) como condicional: copiar literalmente,
+  manter na dúvida, e — se o projeto não tiver login — apagar e renumerar
 
 ## Verificação
 

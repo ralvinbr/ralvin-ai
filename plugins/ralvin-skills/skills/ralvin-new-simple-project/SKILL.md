@@ -115,6 +115,50 @@ como pacotes) e a estratégia de testes: unitários no domínio, integrados em t
 entrypoint, e uma regra de ArchUnit restrita a verificar que entrypoint tem
 teste de integração.
 
+A seção 5.1 do template registra a regra de marcação dos planos: marcar
+`- [x]` no commit de cada step, e deixar em aberto o que não foi verificado de
+fato. Ela entra no scaffold porque nada na cadeia do superpowers escreve a
+marcação de volta no arquivo do plano — as skills de execução registram
+conclusão na lista de todos da sessão e num ledger, que não sobrevivem à sessão.
+Mantenha a seção mesmo que o projeto ainda não tenha `docs/superpowers/plans/`;
+o próprio texto diz que ela passa a valer quando o primeiro plano existir.
+
+**Os dois anexos são condicionais.** O corpo do documento vai de 1 a 6 e é
+sempre igual; o que varia fica depois dele, em anexos. Essa separação existe
+para que apagar um anexo **não renumere nada** — a instrução é sempre "apague o
+anexo inteiro", nunca "apague e renumere as seções seguintes".
+
+**Anexo A — autenticação.** O scaffold **não** gera login, token nem Security, e
+isso não muda. O anexo existe para que, no dia em que a autenticação entrar, ela
+siga um desenho já decidido em vez de ser improvisada: JWT em cookie `httpOnly`
+com header aceito em paralelo e tendo precedência, `Max-Age` derivado da
+expiração do token, `Secure` por variável de ambiente, endpoint de logout, CSRF
+sustentado por `SameSite=Lax` mais origem exata no CORS, middleware em
+`src/middleware.ts` conferindo só presença, e o tratamento de 401 — que **não**
+é um redirecionamento incondicional: A.6.1 explica que 401 de credencial
+recusada se distingue de sessão morta pelo **corpo** da resposta, não pelo
+caminho.
+
+**Anexo B — upload de imagem.** Idem: o scaffold não gera nada de upload. O
+anexo descreve o desenho de imagem em base64 na própria linha do banco, e abre
+com uma checagem de aplicabilidade (B.1) que precisa dar positivo antes do
+resto valer. Base64 no banco serve para uma imagem pequena por registro, lida
+sempre junto do dono; não serve para galeria, anexo grande ou muitas imagens
+por registro. **Não apague o B.1 ao copiar** — sem ele o anexo vira conselho
+ruim para metade dos projetos.
+
+Copie os anexos **exatamente como estão no template**, sem reescrever nem
+resumir — cada item ali corrige um erro observado em projeto real. Não os adapte
+ao projeto na geração: são condicionais por definição e o próprio texto se
+apresenta assim.
+
+Se o usuário disser que o projeto **não** terá autenticação, ou **não** terá
+upload de imagem, apague o anexo correspondente inteiro. Nada mais muda: a
+numeração do corpo não depende deles, e o fecho de "Fora de escopo" já cobre os
+dois casos genericamente. Na dúvida, **mantenha** o anexo: um projeto que não usa
+apenas ignora um trecho de documento, enquanto um projeto que precisa e não tem
+a orientação erra de formas que o build não pega.
+
 **Não crie os pacotes de camada nem os testes descritos no PRD.** O documento é
 a especificação do que deve ser construído; o scaffold entrega apenas a
 estrutura mínima. O próprio template diz isso na abertura, e essa distinção

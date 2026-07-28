@@ -347,9 +347,303 @@ Uma entrega só está completa quando:
 - [ ] `EntrypointHasIntegrationTestRuleIT` passa
 - [ ] O sentido das dependências da seção 2 foi respeitado
 - [ ] `make build` termina com código de saída 0
+- [ ] Os checkboxes do plano da feature em `docs/superpowers/plans/` estão marcados, e o que não foi verificado ficou explicitamente em aberto
+
+### 5.1 Marcação dos planos
+
+Vale a partir do momento em que o projeto passar a usar planos em
+`docs/superpowers/plans/`.
+
+Ao concluir cada step de um plano, trocar `- [ ]` por `- [x]` **no commit
+daquele step**, e não numa passada de arrumação no fim. A mesma regra vale para
+a definição de pronto da spec da feature.
+
+Só marcar o que foi verificado de fato. Um step de verificação manual que não
+foi executado permanece desmarcado e é citado no relatório — marcar por
+presunção é pior do que deixar em branco, porque converte "não sei" em "está
+feito".
+
+**Por que isto precisa estar escrito:** o `writing-plans` gera a sintaxe de
+checkbox e anuncia que ela serve de tracking, mas as skills de execução
+(`executing-plans`, `subagent-driven-development`) direcionam a conclusão para a
+lista de todos da sessão e para um ledger — os dois somem quando a sessão
+acaba. A única instrução do pacote para escrever `- [x]` de volta no arquivo
+está em `using-superpowers/references/antigravity-tools.md`, que existe porque
+aquele harness não tem ferramenta de todo e não se aplica ao Claude Code. Ou
+seja: nada na cadeia grava no artefato que sobrevive à sessão. Por isso a regra
+é do projeto, e não herdada da ferramenta.
+
+Um plano inteiro sem marcação não distingue "não fiz" de "esqueci de marcar", e
+é essa ambiguidade que deixa passar step de verificação que nunca rodou.
 
 ## 6. Fora de escopo
 
 Docker, CI/CD, autenticação, integração HTTP entre frontend e backend (CORS ou
 proxy de dev) e observabilidade além do Actuator. Cada um desses entra por
 decisão explícita, não por antecipação.
+
+A distinção importa: o scaffold não gera **nada** de autenticação — sem
+`SecurityConfig`, sem filtro, sem tela — nem **nada** de upload. Os anexos não
+contradizem isto; eles descrevem a forma a seguir **se e quando** cada um for
+adicionado, para que a decisão não seja improvisada no dia. Enquanto não for,
+o anexo correspondente pode ser apagado, e apagá-lo não renumera nada do corpo
+do documento — é para isso que eles ficam no fim.
+
+## Anexo A — Autenticação e login
+
+> **Este anexo só vale se o projeto tiver autenticação.** O scaffold **não**
+> gera nada disto (ver seção 6). Se o projeto não tem login, apague o anexo
+> inteiro. Se tem — ou vier a ter — ele deve seguir exatamente o desenho
+> abaixo, e não uma variação improvisada.
+
+### A.1 Formato e transporte do token
+
+O token é um JWT auto-contido assinado com HMAC-SHA256, **stateless** no
+servidor e sem lista de revogação.
+
+Ele trafega de **duas** formas, e o filtro aceita as duas:
+
+| Origem | Uso |
+|---|---|
+| Header `Authorization: Bearer <token>` | Clientes programáticos e testes de integração |
+| Cookie `httpOnly` chamado `token` | Browser |
+
+**O header tem precedência sobre o cookie.** Isso não é detalhe de
+implementação: é o que mantém os testes de integração baseados em header
+válidos depois que o cookie entra, e precisa ter teste próprio — header válido
+somado a cookie inválido deve autenticar.
+
+### A.2 Atributos do cookie
+
+```
+token=<jwt>; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=<jwt-expiration/1000>
+```
+
+- **`HttpOnly`** — JavaScript não lê o token, o que fecha a via de roubo por
+  XSS e permite que Server Components leiam o cookie no servidor.
+- **`Max-Age` derivado da expiração do JWT**, nunca um número solto: uma fonte
+  de verdade só, sem risco do cookie sobreviver ao token ou morrer antes dele.
+- **`Secure` por variável de ambiente** (ex.: `AUTH_COOKIE_SECURE`), com
+  default `false` só para o desenvolvimento local em HTTP. Em produção é `true`.
+- **`Path=/` também no logout.** Sem ele o browser planta um segundo cookie em
+  vez de apagar o original.
+
+Como `httpOnly` impede o JavaScript de remover o cookie, a saída exige um
+endpoint dedicado `POST /auth/logout` que devolve o mesmo cookie com
+`Max-Age=0`.
+
+### A.3 CSRF e CORS
+
+A partir do momento em que o token vive num cookie, ele é **credencial
+ambiente** e o CSRF deixa de ser irrelevante. Manter `csrf.disable()` só é
+seguro sob duas condições, e ambas precisam estar escritas ao lado do código:
+
+1. o cookie é `SameSite=Lax`, então o browser não o envia em POST/PATCH/DELETE
+   originado de outro site;
+2. o CORS declara **origem exata, nunca `*`**, e o `Content-Type:
+   application/json` força preflight, que essa origem exata reprova.
+
+Afrouxar o `SameSite`, aceitar corpo form-encoded ou liberar origem curinga
+exige reativar a proteção CSRF. Com `allowCredentials(true)`, origem curinga é
+proibida de qualquer forma.
+
+### A.4 Restrição de domínio no deploy
+
+`SameSite=Lax` funciona em desenvolvimento porque frontend e backend
+compartilham `localhost`. **Se forem publicados em domínios registráveis
+diferentes, o browser deixa de enviar o cookie** nas chamadas com
+`credentials: "include"` e o login para de funcionar em silêncio. Nesse
+cenário o cookie precisa de `SameSite=None`, que por sua vez exige `Secure`.
+
+Decida isto antes do deploy, não depois.
+
+### A.5 Desacoplamento da camada `application`
+
+A camada `application` conversa com uma **porta** (ex.:
+`{package}.application.port.GeradorDeToken`) e nunca com a implementação
+concreta do JWT, preservando a regra de dependência da seção 2. O ganho é
+concreto: os testes dos handlers deixam de precisar de secret, `Clock` e da
+biblioteca de JWT — bastam uma lambda devolvendo uma string fixa.
+
+### A.6 Frontend
+
+- **Camada de API separada por ambiente, por arquivo.** Importar `next/headers`
+  num módulo que um Client Component também importa quebra o build: o módulo
+  inteiro vira server-only por contágio. Um arquivo para o browser
+  (`credentials: "include"`) e outro para o servidor (lê o cookie e o repassa
+  no header `Authorization`). O parse de resposta compartilhado fica num
+  terceiro módulo, sem dependência de ambiente.
+- **O middleware fica em `src/middleware.ts`**, ao lado de `app/`, e **não** na
+  raiz do projeto. O Next resolve essa convenção a partir do diretório que
+  contém `app/`; na raiz o arquivo é ignorado **sem erro e sem aviso**, e o
+  build passa igual. Confira o redirecionamento por requisição real, nunca pelo
+  build verde.
+- **O middleware só checa a presença do cookie, não valida assinatura** — a
+  chave HMAC pertence ao servidor. Ele é conveniência de navegação, não a
+  fronteira de segurança; quem autoriza é o backend. Conferir o **valor**, e não
+  só a presença, evita admitir requisição que vai levar 401.
+- **401 redireciona para o login nas duas pontas**: no browser e, nas Server
+  Components, com `redirect()`. Sem a metade do servidor, um cookie expirado
+  cai no error boundary, que culpa o servidor indisponível e não oferece saída.
+- **Mas 401 tem dois significados, e confundi-los quebra telas.** Um é "a
+  sessão morreu"; o outro é "a credencial que você acabou de digitar está
+  errada" — login com senha errada, ou troca de senha com a senha atual errada.
+  Redirecionar no segundo caso recarrega a página que já está aberta e apaga a
+  mensagem que o formulário acabou de exibir.
+
+### A.6.1 Como distinguir os dois 401
+
+**Discrimine pelo corpo da resposta, não pelo caminho.**
+
+O 401 de sessão morta vem do `authenticationEntryPoint` do Security, que só
+chama `setStatus` — **corpo vazio**. O 401 de credencial recusada vem do
+`@RestControllerAdvice` como `ProblemDetail` — **corpo JSON**. Então: corpo
+parseável como JSON significa resposta de negócio, exiba-a no formulário;
+corpo vazio significa sessão morta, redirecione.
+
+Uma lista de caminhos isentos (`/auth/`, `/perfil/senha`, ...) parece resolver
+e abre um buraco: com o caminho inteiro isento, uma sessão **realmente**
+expirada naquele formulário deixa de redirecionar, e o usuário fica preso
+com um erro genérico e nenhuma saída. O corpo é o sinal correto; o caminho é
+uma aproximação que erra nos dois sentidos.
+
+Consequência prática: a leitura do corpo passa a acontecer **uma vez só**, e o
+resultado alimenta tanto essa decisão quanto o parse da resposta — um `Response`
+só pode ser consumido uma vez, e uma segunda chamada a `.text()` lança.
+
+### A.6.2 Mensagem de erro é do contexto, não do endpoint
+
+Reaproveitar a mensagem de credencial do login em outra tela produz texto
+sem sentido. Uma tela de troca de senha que exibe "Email ou senha inválidos"
+está mentindo: ela não tem campo de email, e o usuário vai conferir o email da
+conta em vez da senha que digitou. A exceção de credencial precisa aceitar
+mensagem própria — "Senha atual incorreta" — mantendo o mesmo status.
+
+### A.7 Rotas públicas
+
+Apenas `POST /auth/login`, `POST /auth/register`, `POST /auth/logout`,
+`/actuator/**` e `/error`. Todo o resto exige token.
+
+`/error` é o destino do forward interno do Spring em erros como 405 e 415;
+sem `permitAll` o Security intercepta o forward não autenticado e converte o
+erro em 403.
+
+## Anexo B — Upload de imagem
+
+> **Este anexo só vale se o projeto guardar imagem enviada pelo usuário.** O
+> scaffold **não** gera nada disto (ver seção 6). Se não for o caso, apague o
+> anexo inteiro. Se for — ou vier a ser — ele deve seguir o desenho abaixo,
+> desde que a checagem de B.1 dê positivo.
+
+### B.1 Quando este desenho serve — e quando não serve
+
+Guardar a imagem como base64 dentro da própria linha do banco é uma escolha
+deliberada, e ela tem um domínio de validade estreito. **Confira antes de
+seguir o resto do anexo.**
+
+**Serve quando as três coisas valem ao mesmo tempo:**
+
+1. é **uma** imagem por registro — foto de perfil, logo, miniatura;
+2. ela é **pequena** — na casa das dezenas de KB depois de reduzida;
+3. ela é **sempre lida junto do dono** — quem carrega o registro quer a imagem.
+
+O ganho é não ter um segundo sistema para manter consistente: a imagem entra na
+mesma transação, sai no mesmo backup, e não existe estado órfão entre banco e
+storage quando um `DELETE` falha pela metade.
+
+**Não serve** para galeria, anexo de documento, muitas imagens por registro, ou
+imagem servida a quem não carrega o registro dono. Nesses casos a imagem vai
+para arquivo ou storage de objeto e o banco guarda só a referência. Insistir em
+base64 aqui infla **toda** leitura da linha com dados que quase nunca são
+usados, e a tabela cresce em ordens de grandeza.
+
+**Régua prática:** acima de ~100–200 KB por imagem, ou mais de uma imagem por
+registro, reavalie. O resto deste anexo assume que a checagem deu positivo.
+
+### B.2 Como a imagem é guardada
+
+Guarde a **data URL completa** (`data:image/jpeg;base64,...`), não apenas o
+payload. Isso dispensa uma coluna separada para o tipo da imagem e deixa o
+frontend jogar o valor direto no `src` de um `<img>`, sem remontar nada.
+
+A coluna é **`VARCHAR(N)`, não `CLOB`**, com `N` acima do teto que a aplicação
+valida. Dois motivos:
+
+- `VARCHAR` mapeia direto para `String` no Spring Data JDBC; `CLOB` impõe uma
+  conversão de `Clob` que não traz nada em troca nesse tamanho.
+- A margem entre o teto da aplicação e o tamanho da coluna garante que **quem
+  rejeita o excesso é a validação de domínio**, com mensagem de campo e HTTP
+  400, e não o banco, com violação de integridade e HTTP 500.
+
+### B.3 Validação no domínio
+
+A imagem é um **value object** — a mesma forma dos outros do projeto: construtor
+compacto que valida e lança, mais fábrica estática `opcional(...)` que devolve
+`null` para entrada nula ou em branco.
+
+Três validações, **nesta ordem**:
+
+1. o valor casa com `^data:image/(jpeg|png|webp);base64,` — âncora no início,
+   senão `"lixo data:image/png;base64,QUJD"` passa;
+2. o comprimento total não passa do teto;
+3. o trecho depois da vírgula decodifica como base64.
+
+**A ordem não é estética.** O tamanho vem antes da decodificação para não gastar
+tempo decodificando megabytes e só então rejeitar por tamanho.
+
+**O teste de fronteira precisa prender os dois lados:** um caso constrói uma
+data URL de comprimento exatamente igual ao teto e afirma o tamanho exato; outro
+constrói teto+1 e afirma que lança. Um teste que só afirma "≤ teto" passa para
+qualquer valor que tenha sido construído com sucesso e **não pega** a troca de
+`>` por `>=` na comparação — que é justamente o erro que um teste de fronteira
+existe para pegar.
+
+### B.4 Redução no browser
+
+O teto do backend é a **regra**; a redução no browser é **conveniência**. Sem
+ela, foto de celular (3 MB, ~4 MB em base64) é sempre rejeitada e o upload nunca
+funciona na prática.
+
+- Desenhe num `<canvas>` de lado fixo — 512×512 serve para avatar — e exporte
+  com `toDataURL("image/jpeg", 0.8)`.
+- Use **corte central**: o menor lado vira o lado do quadrado e o excedente do
+  maior é descartado meio a meio. Um `drawImage` de 5 argumentos estica a imagem
+  e deixa rostos achatados dentro do avatar redondo.
+- `URL.revokeObjectURL` vai num `finally`, para rodar também quando o
+  carregamento falha.
+- Rejeite no cliente, **antes** de decodificar, o que não for `image/*` ou
+  passar de ~10 MB de arquivo. Isso não protege o backend — protege a aba de
+  travar decodificando um arquivo enorme.
+
+**Verifique o corte por amostragem de pixel, não a olho.** Gere uma imagem
+não quadrada com bordas de uma cor e miolo de outra: se o resultado sai
+inteiramente da cor do miolo, houve recorte; se as bordas aparecem, houve
+esticamento. A olho as duas coisas se parecem.
+
+### B.5 Alteração parcial: o protocolo de três estados
+
+Se a API rejeita `null` explícito no corpo — como faz o desenho de `PATCH`
+deste projeto — então **remover a imagem precisa de um valor próprio**, porque
+"apagar" não pode ser expresso por null:
+
+| Valor no corpo | Significado |
+|---|---|
+| campo ausente | não altera a imagem |
+| `""` (string vazia) | **remove** a imagem |
+| data URL | grava a imagem nova |
+
+Os três estados precisam concordar em **quatro lugares**: o Command e seu
+Handler, o Controller, o tipo no frontend, e o estado do formulário. Conflatar
+dois deles produz um dos dois bugs silenciosos: editar o nome apaga a foto, ou
+a remoção nunca funciona. Nenhum dos dois aparece em teste de caminho feliz —
+escreva um teste para cada um dos três estados.
+
+### B.6 Serialização e o tipo no frontend
+
+O DTO de resposta leva `@JsonInclude(NON_NULL)`: sem imagem, o campo **some do
+JSON** em vez de sair como `null`.
+
+A consequência atravessa a fronteira e é fácil de errar: no frontend o campo é
+**opcional** (`foto?: string`), **não** `string | null`. A propriedade lida de
+um objeto sem a chave é `undefined`, e tipá-la como `string | null` descreve uma
+resposta que o backend nunca envia.
